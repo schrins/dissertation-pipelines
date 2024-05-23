@@ -54,6 +54,20 @@ bcftools view pav_remerged.vcf -r chr1 > pav_remerged.chr1.vcf
 
 The resulting file `pav_remerged.chr1.vcf` is finally used for the phasing experiments. We also uploaded this file to Zenodo to allow for a reproduction of the phasing results in case any of the data sources above breaks in the future.
 
+## Sequencing data
+
+The PacBio reads for the trio are available here:
+
+https://ftp-trace.ncbi.nlm.nih.gov/giab/ftp/data/AshkenazimTrio/HG002_NA24385_son/PacBio_MtSinai_NIST/PacBio_minimap2_bam/HG002_PacBio_GRCh38.bam
+https://ftp-trace.ncbi.nlm.nih.gov/giab/ftp/data/AshkenazimTrio/HG003_NA24149_father/PacBio_MtSinai_NIST/PacBio_minimap2_bam/HG003_PacBio_GRCh38.bam
+https://ftp-trace.ncbi.nlm.nih.gov/giab/ftp/data/AshkenazimTrio/HG004_NA24143_mother/PacBio_MtSinai_NIST/PacBio_minimap2_bam/HG004_PacBio_GRCh38.bam
+
+The HiFi reads for the trio are available here:
+
+https://ftp-trace.ncbi.nlm.nih.gov/giab/ftp/data/AshkenazimTrio/HG002_NA24385_son/PacBio_CCS_15kb_20kb_chemistry2/GRCh38/HG002.SequelII.merged_15kb_20kb.pbmm2.GRCh38.haplotag.10x.bam
+https://ftp-trace.ncbi.nlm.nih.gov/giab/ftp/data/AshkenazimTrio/HG003_NA24149_father/PacBio_CCS_15kb_20kb_chemistry2/GRCh38/HG003.SequelII.merged_15kb_20kb.pbmm2.GRCh38.haplotag.10x.bam
+https://ftp-trace.ncbi.nlm.nih.gov/giab/ftp/data/AshkenazimTrio/HG004_NA24143_mother/PacBio_CCS_15kb_20kb_chemistry2/GRCh38/HG004.SequelII.merged_15kb_20kb.pbmm2.GRCh38.haplotag.10x.bam
+
 ## Testing PedMEC heuristic
 
 We summarized all tests in the snakemake pipeline `Snakefile-Pedmec`. Plase adjust the directories in `config.json` to match your file system. The metrics can be found in the `.csv` or `.tsv` files in the `results-thesis-Apr24` directories. It also contains command line logs for the individual WhatsHap calls, from which we extracted the runtime and peak memory consumption.
