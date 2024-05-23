@@ -14,6 +14,10 @@ It does not contain all data, as the used sequencing data would be too large. Ho
 
 ## Software
 
+### Conda
+
+All workflow pipelines were run in separate conda environments. The environments were created over time and are not consistent with one another regarding the exact version of tools and packages. I exported the conda environment by the time of submission into yml-files, once with **all** installed packages (without 'history'-suffix in file name, created by `conda env export`) and once with only the manually requested packages (with 'history'-suffix in file name, created by `conda env export --from-history`). Please note that the latter type of will likely different results in a different environment than what was used for the dissertation due to conda always choosing the most recent package versions by the creation time of the environment.
+
 ### WhatsHap
 
 The main software of this dissertation is WhatsHap (https://github.com/whatshap/whatshap). I used it in different versions for each of the experiments:
@@ -25,6 +29,8 @@ The custom version refers to following commit: https://github.com/whatshap/whats
 
 The commit is branched off version 2.2, with version 2.3 rebased in. The changes will likely be merged back with the release of 2.4, except for the cluster refinement; this feature was removed with the transition to version 2.0 and only re-inserted for experimental use. There is not intention to permanently add in again.
 
-### Conda
+To use a custom version of WhatsHap, one has to manually run the installation routine via pip. Inside the downloaded or cloned repository, the command `pip install -e .` has to be executed. WhatsHap will load additional packages via pip if needed. In case this routine fails in the future, there might be an updated for the installation routine on
 
-All workflow pipelines were run in separate conda environments. The environments were created over time and are not consistent with one another regarding the exact version of tools and packages. I exported the conda environment by the time of submission into yml-files, once with **all** installed packages (without 'history'-suffix in file name, created by `conda env export`) and once with only the manually requested packages (with 'history'-suffix in file name, created by `conda env export --from-history`). Please note that the latter type of will likely different results in a different environment than what was used for the dissertation due to conda always choosing the most recent package versions by the creation time of the environment.
+https://whatshap.readthedocs.io/en/latest/installation.html
+
+Please note that this has to be done for every conda environment separately. Also mind that each environment uses its own (different) Python version.
