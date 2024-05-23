@@ -1,0 +1,95 @@
+configfile:'config.json'
+
+# data paths
+path_to_parents  = config['path_to_parents']
+path_to_progeny  = config['path_to_progeny']
+path_to_pedfile  = config['path_to_pedfile']
+main_parent_vcf  = config['main_parent_vcf']
+main_progeny_vcf = config['main_progeny_vcf']
+
+# names
+ref_name           = config['ref_name']
+whatshap           = config['whatshap']
+parent           = config['parent']
+cutoffs          = config['cutoffs']
+var_complexities = config['var_complexities']
+window_sizes     = config['window_sizes']
+chromsomes       = config['all_chromosomes']
+chr_name         = config['chr_name']
+
+
+wildcard_constraints:
+    chr="\d+",
+    subregion="[ch\d+\.]*\d+Mx",
+    region="[ch\d+\.]*\d+Mx",
+    complexity="\dt*",
+    window="\d+",
+    cutoff="\d+",
+
+
+rule all:
+    input:
+        expand('output-whole/ch{chromosome}.genetic.altus.c{complexity}.w{window}.cut{cutoff}.vcf', chromosome=chromsomes, complexity=var_complexities, window=window_sizes, cutoff=cutoffs)
+
+rule genetic_phase:
+    input:
+        parent=path_to_parents + 'ch{chrom}.parents.decluttered.vcf',
+        progeny=path_to_progeny + 'ch{chrom}.progeny.decluttered.vcf.gz',
+        pedfile=path_to_pedfile
+    output:
+        'output-whole/ch{chrom}.genetic.altus.c{complexity}.w{window}.cut{cutoff}.vcf'
+    log:
+        'output-whole/ch{chrom}.genetic.altus.c{complexity}.w{window}.cut{cutoff}.log'
+    shell:
+        '{whatshap} polyphasegenetic {input.parent} {input.pedfile} -P {input.progeny} -p 4 -o {output} --sample {parent} -C {wildcards.complexity} --scoring-window {wildcards.window} --ratio-cutoff {wildcards.cutoff} --distrust-parent-genotypes 2> {log}'
+
+
+rule cut_vcf_parents:
+    input:
+        vcf=path_to_parents + main_parent_vcf,
+        index=path_to_parents + main_parent_vcf + '.csi'
+    output:
+        temp(path_to_parents + 'ch{chr}.parents.cluttered.vcf')
+    params:
+        name=lambda wildcards: chr_name[wildcards.chr]
+    shell:
+        'bcftools view {input.vcf} -O v -o {output} -r {ref_name}{params.name}'
+
+
+rule declutter_parent:
+    input:
+        '{prefix}.parents.cluttered.vcf'
+    output:
+        '{prefix}.parents.decluttered.vcf'
+    shell:
+        'python3 scripts/declutter_vcf.py {input} {output}'
+
+
+rule cut_vcf_progeny:
+    input:
+        vcf=path_to_progeny + main_progeny_vcf,
+        index=path_to_progeny + main_progeny_vcf + '.csi'
+    output:
+        temp(path_to_progeny + 'ch{chr}.progeny.cluttered.vcf')
+    params:
+        name=lambda wildcards: chr_name[wildcards.chr]
+    shell:
+        'bcftools view {input.vcf} -O v -o {output} -r {ref_name}{params.name}'
+
+
+rule declutter_progeny:
+    input:
+        '{prefix}.progeny.cluttered.vcf'
+    output:
+        '{prefix}.progeny.decluttered.vcf'
+    shell:
+        'python3 scripts/declutter_vcf.py {input} {output}'
+
+
+rule compress_vcf:
+    input:
+        '{prefix}.decluttered.vcf'
+    output:
+        '{prefix}.decluttered.vcf.gz'
+    shell:
+        'bgzip < {input} -o {output}'

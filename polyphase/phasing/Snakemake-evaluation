@@ -1,0 +1,264 @@
+configfile:'config.json'
+
+# data directories
+path_to_reference = config['path_to_reference']
+path_to_data = config['path_to_data']
+path_to_floppdata = config['path_to_floppdata']
+path_to_altusdata = config['path_to_altusdata']
+
+# results folder
+results='results-thesis-Apr24'
+
+# path to whatshap
+whatshap = config['whatshap']
+
+# path to hpop
+hpop = config['hpop']
+
+# path to flopp
+flopp = config['flopp']
+
+# samples
+samples_real = config['samples_real']
+samples_sim = config['samples_sim']
+samples_scaling = config['samples_scaling']
+samples_special = config['samples_special']
+samples_altus = config['samples_altus']
+samples_flopp = config['samples_flopp']
+samples_flopp_extended = config['samples_flopp_extended']
+
+# phasing tools
+methods = config['methods']
+methods_scaling = config['methods_scaling']
+methods_special = config['methods_special']
+methods_altus = config['methods_altus']
+methods_flopp = config['methods_flopp']
+methods_flopp_extended = config['methods_flopp_extended']
+
+sample_to_ploidy = {'triploid':3, 'tetraploid':4, 'pentaploid':5, 'hexaploid':6, 'ch03.60Mx':4, 'ch04.71Mx':4, 'ch05.56Mx':4}
+
+rule all:
+    input:
+        expand('{results}/evaluation/real-reads/{method}/{method}-{sample}.real.chr1.cov{coverage}.{which}.tsv', results=results, sample=samples_real, coverage=[40,80], method=methods, which=['stats','pair']),
+        expand('{results}/evaluation/simulated-reads/{method}/{method}-{sample}.simulated.chr1.cov{coverage}.{which}.tsv', results=results, sample=samples_sim, coverage=[40,80], method=methods, which=['stats','pair']),
+        expand('{results}/evaluation/real-reads/{method}/{method}-{sample}.real.chr1.cov{coverage}.{which}.tsv', results=results, sample=samples_scaling, coverage=[40,80], method=methods_scaling, which=['stats','pair']),
+        expand('{results}/evaluation/simulated-reads/{method}/{method}-{sample}.simulated.chr1.cov{coverage}.{which}.tsv', results=results, sample=samples_scaling, coverage=[40,80], method=methods_scaling, which=['stats','pair']),
+        expand('{results}/evaluation/flopppb-reads/{method}/{method}-{sample}.flopppb.chr01.cov{coverage}.{which}.tsv', results=results, sample=samples_flopp, coverage=[10], method=methods_flopp, which=['stats','pair']),
+        expand('{results}/evaluation/flopppb-reads/{method}/{method}-{sample}.flopppb.chr01.cov{coverage}.{which}.tsv', results=results, sample=samples_flopp_extended, coverage=[10], method=methods_flopp_extended, which=['stats','pair']),
+        #expand('{results}/evaluation/floppont-reads/{method}/{method}-{sample}.floppont.chr01.cov{coverage}.{which}.tsv', results=results, sample=samples_flopp, coverage=[10], method=methods_flopp, which=['stats','pair']),
+        #expand('{results}/evaluation/floppont-reads/{method}/{method}-{sample}.floppont.chr01.cov{coverage}.{which}.tsv', results=results, sample=samples_flopp_extended, coverage=[10], method=methods_flopp_extended, which=['stats','pair']),
+        expand('{results}/evaluation/altusmixed-reads/{method}/{method}-{sample}.altusmixed.chr{sample}.covNA.{which}.tsv', results=results, sample=samples_altus, method=methods_altus, which=['pair']),
+        expand('{results}/evaluation/altusallhifi-reads/{method}/{method}-{sample}.altusallhifi.chr{sample}.covNA.{which}.tsv', results=results, sample=samples_altus, method=methods_altus, which=['pair']),
+        expand('{results}/evaluation/real-reads/{method}/{method}-{sample}.real.chr1.cov{coverage}.{which}.tsv', results=results, sample=samples_special, coverage=[40,80], method=methods_special, which=['stats','pair']),
+        expand('{results}/evaluation/simulated-reads/{method}/{method}-{sample}.simulated.chr1.cov{coverage}.{which}.tsv', results=results, sample=samples_special, coverage=[40,80], method=methods_special, which=['stats','pair']),
+        expand('{results}/evaluation/flopppb-reads/{method}/{method}-{sample}.flopppb.chr01.cov{coverage}.{which}.tsv', results=results, sample=samples_flopp, coverage=[10], method=methods_special, which=['stats','pair']),
+        #expand('{results}/evaluation/floppont-reads/{method}/{method}-{sample}.floppont.chr01.cov{coverage}.{which}.tsv', results=results, sample=samples_flopp, coverage=[10], method=methods_special, which=['stats','pair']),
+
+
+rule benchmark:
+    input:
+        expand('{results}/benchmark/real-reads/{method}/{method}-{sample}.real.chr1.cov{coverage}.vcf', results=results, sample=['tetraploid'], coverage=[40,80], method=methods),
+        expand('{results}/benchmark/real-reads/{method}/{method}-{sample}.real.chr1.cov{coverage}.vcf', results=results, sample=['hexaploid'], coverage=[40, 80], method=methods),
+        expand('{results}/benchmark/simulated-reads/{method}/{method}-{sample}.simulated.chr1.cov{coverage}.vcf', results=results, sample=['tetraploid'], coverage=[40,80], method=methods),
+        expand('{results}/benchmark/simulated-reads/{method}/{method}-{sample}.simulated.chr1.cov{coverage}.vcf', results=results, sample=['hexaploid'], coverage=[40, 80], method=methods),
+        expand('{results}/benchmark/flopppb-reads/{method}/{method}-{sample}.flopppb.chr01.cov{coverage}.vcf', results=results, sample=samples_flopp, coverage=[10], method=methods_flopp),
+        expand('{results}/benchmark/altusmixed-reads/{method}/{method}-{sample}.altusmixed.chr{sample}.covNA.vcf', results=results, sample=samples_altus, method=methods_altus),
+
+
+# input data for phasing and evaluation
+def truth_vcf(wildcards):
+    if wildcards.readtype in ['real', 'simulated']:
+        return path_to_data+'vcf/{sample}.chr{chrom}.biallelic.vcf'.format(sample=wildcards.sample, chrom=wildcards.chrom)
+    elif wildcards.readtype in ['flopppb','floppont']:
+        return path_to_floppdata+'pds.{sample}.vcf'.format(sample=wildcards.sample)
+    elif wildcards.readtype in ['altusmixed','altusallhifi']:
+        return path_to_altusdata+'phased-vcf/{region}.phased.vcf'.format(region=wildcards.sample)
+
+def input_vcf_unphased(wildcards):
+    if wildcards.readtype in ['real', 'simulated']:
+        return path_to_data+'vcf/{sample}.chr{chrom}.biallelic.vcf'.format(sample=wildcards.sample, chrom=wildcards.chrom)
+    elif wildcards.readtype in ['flopppb','floppont']:
+        return path_to_floppdata+'pds.{sample}.vcf'.format(sample=wildcards.sample)
+    elif wildcards.readtype in ['altusmixed']:
+        return path_to_altusdata+'ccs-reads/altus.{region}.vcf'.format(region=wildcards.sample)
+    elif wildcards.readtype in ['altusallhifi']:
+        return path_to_altusdata+'phased-vcf/{region}.phased.vcf'.format(region=wildcards.sample)
+
+def phase_bam(wildcards):
+    if wildcards.readtype in ['real', 'simulated']:
+        return path_to_data+'{readtype}-reads/bam/{sample}-{readtype}.chr{chrom}.cov{coverage}.bam'.format(readtype=wildcards.readtype, sample=wildcards.sample, chrom=wildcards.chrom, coverage=wildcards.coverage)
+    elif wildcards.readtype in ['flopppb']:
+        return path_to_floppdata+'sorted_pds_merged_{coverage}x_pacbio_RS.{sample}.bam'.format(sample=wildcards.sample, coverage=wildcards.coverage)
+    elif wildcards.readtype in ['floppont']:
+        return path_to_floppdata+'sorted_pds_merged_{coverage}x_nanopore.{sample}.bam'.format(sample=wildcards.sample, coverage=wildcards.coverage)
+    elif wildcards.readtype in ['altusmixed','altusallhifi']:
+        return path_to_altusdata+'ccs-reads/{region}.ccs.altus.bam'.format(region=wildcards.sample)
+        
+def reference_param(wildcards):
+    if wildcards.readtype in ['real', 'simulated']:
+        return ' --reference ' + path_to_reference + 'hg38.chr{chrom}.fa'.format(chrom=wildcards.chrom)
+    elif wildcards.readtype in ['flopppb','floppont']:
+        return ' --reference ' + path_to_floppdata + 'potato_chr1_3M_noN.fa'
+    elif wildcards.readtype in ['altusmixed','altusallhifi']:
+        return ' --reference ' + path_to_altusdata +'reference/SolyntusV1.1.fasta'
+    else:
+        return ''
+
+# run polyphase
+rule run_polyphase:
+    input:
+        bam=phase_bam,
+        vcf=input_vcf_unphased
+    output:
+        '{results}/{phasingfolder}/{readtype}-reads/whatshap_b{sens, \d+}/whatshap_b{sens}-{sample}.{readtype}.chr{chrom}.cov{coverage}.vcf'
+    log:
+        '{results}/{phasingfolder}/{readtype}-reads/whatshap_b{sens}/whatshap_b{sens}-{sample}.{readtype}.chr{chrom}.cov{coverage}.log'
+    params:
+        ploidy=lambda wildcards: sample_to_ploidy[wildcards.sample],
+        reference_setting=reference_param
+    shell:
+        '/usr/bin/time -v {whatshap} polyphase {input.vcf} {input.bam} --ignore-read-groups -B {wildcards.sens} -o {output} {params.reference_setting} -p {params.ploidy} --only-snvs &> {log}'
+
+rule run_polyphase_distrust:
+    input:
+        bam=phase_bam,
+        vcf=input_vcf_unphased
+    output:
+        '{results}/{phasingfolder}/{readtype}-reads/whatshap_b{sens, \d+}_distrust/whatshap_b{sens}_distrust-{sample}.{readtype}.chr{chrom}.cov{coverage}.vcf'
+    log:
+        '{results}/{phasingfolder}/{readtype}-reads/whatshap_b{sens}_distrust/whatshap_b{sens}_distrust-{sample}.{readtype}.chr{chrom}.cov{coverage}.log'
+    params:
+        ploidy=lambda wildcards: sample_to_ploidy[wildcards.sample],
+        reference_setting=reference_param
+    shell:
+        '/usr/bin/time -v {whatshap} polyphase {input.vcf} {input.bam} --ignore-read-groups -B {wildcards.sens} -o {output} {params.reference_setting} -p {params.ploidy} --only-snvs --distrust-genotypes &> {log}'
+
+rule run_polyphase_refine:
+    input:
+        bam=phase_bam,
+        vcf=input_vcf_unphased
+    output:
+        '{results}/{phasingfolder}/{readtype}-reads/whatshap_b{sens, \d+}_refine/whatshap_b{sens}_refine-{sample}.{readtype}.chr{chrom}.cov{coverage}.vcf'
+    log:
+        '{results}/{phasingfolder}/{readtype}-reads/whatshap_b{sens}_refine/whatshap_b{sens}_refine-{sample}.{readtype}.chr{chrom}.cov{coverage}.log'
+    params:
+        ploidy=lambda wildcards: sample_to_ploidy[wildcards.sample],
+        reference_setting=reference_param
+    shell:
+        '/usr/bin/time -v {whatshap} polyphase {input.vcf} {input.bam} --ignore-read-groups -B {wildcards.sens} -o {output} {params.reference_setting} -p {params.ploidy} --only-snvs --ce-refinements 5 &> {log}'
+
+
+# run old polyphase
+rule run_old_polyphase:
+    input:
+        bam=phase_bam,
+        vcf=input_vcf_unphased
+    output:
+        '{results}/{phasingfolder}/{readtype}-reads/whatshap_old_b{sens, \d+}/whatshap_old_b{sens}-{sample}.{readtype}.chr{chrom}.cov{coverage}.vcf'
+    log:
+        '{results}/{phasingfolder}/{readtype}-reads/whatshap_old_b{sens}/whatshap_old_b{sens}-{sample}.{readtype}.chr{chrom}.cov{coverage}.log'
+    conda:
+        'conda-wh10.yaml'
+    params:
+        ploidy=lambda wildcards: sample_to_ploidy[wildcards.sample],
+        reference_setting=reference_param
+    shell:
+        '/usr/bin/time -v {whatshap} polyphase {input.vcf} {input.bam} --ignore-read-groups -B {wildcards.sens} -o {output} {params.reference_setting} -p {params.ploidy} &> {log}'
+
+rule run_old_polyphase_norefine:
+    input:
+        bam=phase_bam,
+        vcf=input_vcf_unphased
+    output:
+        '{results}/{phasingfolder}/{readtype}-reads/whatshap_old_b{sens, \d+}_norefine/whatshap_old_b{sens}_norefine-{sample}.{readtype}.chr{chrom}.cov{coverage}.vcf'
+    log:
+        '{results}/{phasingfolder}/{readtype}-reads/whatshap_old_b{sens}_norefine/whatshap_old_b{sens}_norefine-{sample}.{readtype}.chr{chrom}.cov{coverage}.log'
+    conda:
+        'conda-wh10.yaml'
+    params:
+        ploidy=lambda wildcards: sample_to_ploidy[wildcards.sample],
+        reference_setting=reference_param
+    shell:
+        '/usr/bin/time -v {whatshap} polyphase {input.vcf} {input.bam} --ignore-read-groups -B {wildcards.sens} -o {output} {params.reference_setting} -p {params.ploidy} --ce-refinements 0 &> {log}'
+
+
+# run hpop
+rule run_hpop:
+    input:
+        bam=phase_bam,
+        vcf=input_vcf_unphased
+    output:
+        '{results}/{phasingfolder}/{readtype}-reads/hpop/hpop-{sample}.{readtype}.chr{chrom}.cov{coverage}/hpop_solution.txt'
+    log:
+        '{results}/{phasingfolder}/{readtype}-reads/hpop/hpop-{sample}.{readtype}.chr{chrom}.cov{coverage}/hpop_solution.log'
+    resources:
+        hpop=1
+    run:
+        ploidy = sample_to_ploidy[wildcards.sample] if wildcards.sample in sample_to_ploidy else 2
+        shell('/usr/bin/time -v java -jar {hpop} -p {ploidy} -v {input.vcf} -b {input.bam} -o {output} &> {log}')
+
+# run flopp
+rule run_flopp:
+    input:
+        bam=phase_bam,
+        vcf=input_vcf_unphased
+    output:
+        '{results}/{phasingfolder}/{readtype}-reads/flopp/flopp-{sample}.{readtype}.chr{chrom}.cov{coverage}/flopp_solution.txt'
+    log:
+        '{results}/{phasingfolder}/{readtype}-reads/flopp/flopp-{sample}.{readtype}.chr{chrom}.cov{coverage}/flopp_solution.log'
+    conda:
+        'conda-flopp.yaml'
+    params:
+        ploidy=lambda wildcards: sample_to_ploidy[wildcards.sample]
+    resources:
+        cores=8
+    shell:
+        '/usr/bin/time -v {flopp} -p {params.ploidy} -v {input.vcf} -b {input.bam} -t 1 -o {output} &> {log}'
+
+# convert hpop output to VCF-format
+rule hpop_to_vcf:
+    input:
+        txt='{results}/{phasingfolder}/{readtype}-reads/hpop/hpop-{sample}.{readtype}.chr{chrom}.cov{coverage}/hpop_solution.txt',
+        vcf=input_vcf_unphased
+    output:
+        '{results}/{phasingfolder}/{readtype}-reads/hpop/hpop-{sample}.{readtype}.chr{chrom}.cov{coverage}.vcf'
+    shell:
+        'python3 scripts/hpop2vcf.py {input.txt} {input.vcf} {output}'
+        
+# convert flopp output to VCF-format
+rule flopp_to_vcf:
+    input:
+        txt='{results}/{phasingfolder}/{readtype}-reads/flopp/flopp-{sample}.{readtype}.chr{chrom}.cov{coverage}/flopp_solution.txt',
+        vcf=input_vcf_unphased
+    output:
+        '{results}/{phasingfolder}/{readtype}-reads/flopp/flopp-{sample}.{readtype}.chr{chrom}.cov{coverage}.vcf'
+    shell:
+        'python3 scripts/flopp2vcf.py {input.txt} {input.vcf} {output}'
+
+rule evaluate:
+    input:
+        true=truth_vcf,
+        phasing='{results}/phasing/{readtype}-reads/{method}/{method}-{sample}.{readtype}.chr{chrom}.cov{coverage}.vcf'
+    output:
+        tsv='{results}/evaluation/{readtype}-reads/{method}/{method}-{sample}.{readtype}.chr{chrom}.cov{coverage}.pair.tsv'
+    log:
+        '{results}/evaluation/{readtype}-reads/{method}/{method}-{sample}.{readtype}.chr{chrom}.cov{coverage}.pair.log'
+    conda:
+        'conda-wh22b.yaml'
+    params:
+        ploidy=lambda wildcards: sample_to_ploidy[wildcards.sample]
+    shell:
+        '{whatshap} compare -p {params.ploidy} {input.true} {input.phasing} --tsv-pairwise {output.tsv} > {log}'
+
+rule stats:
+    input:
+        phasing='{results}/phasing/{readtype}-reads/{method}/{method}-{sample}.{readtype}.chr{chrom}.cov{coverage}.vcf',
+        lengths='chromosome-lengths.txt'
+    output:
+        tsv='{results}/evaluation/{readtype}-reads/{method}/{method}-{sample}.{readtype}.chr{chrom}.cov{coverage}.stats.tsv'
+    log:
+        '{results}/evaluation/{readtype}-reads/{method}/{method}-{sample}.{readtype}.chr{chrom}.cov{coverage}.stats.log'
+    conda:
+        'conda-wh22b.yaml'
+    shell:
+        '{whatshap} stats {input.phasing} --chr-lengths {input.lengths} --tsv {output} > {log}'

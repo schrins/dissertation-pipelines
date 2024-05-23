@@ -1,0 +1,335 @@
+configfile:'config.json'
+
+# data paths
+path_to_reference  = config['path_to_reference']
+path_to_parents    = config['path_to_parents']
+path_to_progeny    = config['path_to_progeny']
+path_to_shortreads = config['path_to_shortreads']
+path_to_ccs_reads  = config['path_to_ccs_bam']
+path_to_output     = config['path_to_output']
+path_to_csv        = config['path_to_csv']
+path_to_pedfile    = config['path_to_pedfile']
+ped_prefix         = config['ped_prefix']
+path_to_lengthfile = config['path_to_lengthfile']
+main_parent_vcf    = config['main_parent_vcf']
+main_progeny_vcf   = config['main_progeny_vcf']
+
+# names
+ref_name           = config['ref_name']
+whatshap           = config['whatshap']
+parent             = config['parent']
+co_parent          = config['co_parent']
+var_complexities   = config['var_complexities']
+var_complexities_s = config['var_complexities_sampled']
+window_sizes       = config['window_sizes']
+cutoffs            = config['cutoffs']
+downsample_fracs   = config['downsample_fracs']
+pop_sizes          = config['pop_sizes']
+full_pop_size      = config['full_pop_size']
+runs_per_pop_size  = config['runs_per_pop_size']
+
+# regions
+region_list        = config['region_list']
+region_start       = config['region_start']
+region_end         = config['region_end']
+chr_name           = config['chr_name']
+chr_map            = config['chr_map']
+
+# reads
+readtypes          = ['ccs', 'illumina']
+
+
+wildcard_constraints:
+    chr="\d+",
+    subregion="[ch\d+\.]*\d+Mx",
+    region="[ch\d+\.]*\d+Mx",
+    complexity="\dt*",
+    window="\d+",
+    cutoff="\d+",
+    samplesize="(-0\.\d+)?",
+    percentage="0\.\d+"
+
+
+rule all:
+    input:
+        expand('{}{{region}}.genetic.altus.c{{complexity}}.w{{window}}.cut{{cutoff}}.vcf'.format(path_to_output), region=region_list, complexity=var_complexities, window=window_sizes, cutoff=cutoffs),
+        expand('{}{{region}}.genetic.altus.c{{complexity}}.w{{window}}.cut{{cutoff}}.tsv'.format(path_to_csv), region=region_list, complexity=var_complexities, window=window_sizes, cutoff=cutoffs),
+        expand('{}{{region}}.genetic.altus.c{{complexity}}.w{{window}}.cut{{cutoff}}.sub{{subsize}}-{{run}}.vcf'.format(path_to_output), region=region_list, complexity=var_complexities_s, window=window_sizes, cutoff=cutoffs, subsize=pop_sizes, run=range(runs_per_pop_size)),
+        expand('{}{{region}}.genetic.altus.c{{complexity}}.w{{window}}.cut{{cutoff}}.sub{{subsize}}-{{run}}.tsv'.format(path_to_csv), region=region_list, complexity=var_complexities_s, window=window_sizes, cutoff=cutoffs, subsize=pop_sizes, run=range(runs_per_pop_size)),
+        expand('{}{{region}}.genetic.altus.c{{complexity}}.w{{window}}.cut{{cutoff}}.sub{}-1.tsv'.format(path_to_csv, full_pop_size), region=region_list, complexity=var_complexities_s, window=window_sizes, cutoff=cutoffs),
+        expand('{}{{region}}.genetic.altus.c{{complexity}}.w{{window}}.cut{{cutoff}}.avg.csv'.format(path_to_csv), region=region_list, complexity=var_complexities_s, window=window_sizes, cutoff=cutoffs),
+        expand('{}{{region}}-{{samplesize}}.genetic.altus.c{{complexity}}.w{{window}}.cut{{cutoff}}.tsv'.format(path_to_csv), region=region_list, complexity=var_complexities_s, window=window_sizes, cutoff=cutoffs, samplesize=downsample_fracs),
+        expand('{}hybrid-pair/altus.{{region}}.c{{complexity}}.w{{window}}.cut{{cutoff}}.b{{sensitivity}}.{{readtype}}.hybrid.tsv'.format(path_to_csv), region=region_list, complexity=var_complexities_s, window=[250], cutoff=[0], sensitivity=[0, 1], readtype=readtypes),
+        expand('{}hybrid-stats/altus.{{region}}.c{{complexity}}.w{{window}}.cut{{cutoff}}.b{{sensitivity}}.{{readtype}}.hybrid.tsv'.format(path_to_csv), region=region_list, complexity=var_complexities_s, window=[250], cutoff=[0], sensitivity=[0, 1], readtype=readtypes),
+        expand('{}hybrid-pair/altus.{{region}}.b{{sensitivity}}.{{readtype}}.pure.tsv'.format(path_to_csv), region=region_list, sensitivity=[0, 1], readtype=readtypes),
+        expand('{}hybrid-stats/altus.{{region}}.b{{sensitivity}}.{{readtype}}.pure.tsv'.format(path_to_csv), region=region_list, sensitivity=[0, 1], readtype=readtypes),
+
+
+def get_input_reads(wildcards):
+    if wildcards.readtype == "ccs":
+        return path_to_ccs_reads + 'ch{}.{}.ccs.altus.bam'.format(wildcards.chr, wildcards.subregion)
+    elif wildcards.readtype == "illumina":
+        return '{}{}.{}_CPMT.srt.ch{}.{}.bam'.format(path_to_shortreads, parent, ref_name, wildcards.chr, wildcards.subregion)
+
+
+def get_genotype_mode(wildcards):
+    if wildcards.complexity[-1] == "t":
+        return ""
+    else:
+        return " --distrust genotypes"
+
+
+def get_complexity(wildcards):
+    if wildcards.complexity[-1] == "t":
+        return  wildcards.complexity[:-1]
+    else:
+        return wildcards.complexity
+
+
+rule hybrid_phase:
+    input:
+        vcf=path_to_output + 'ch{chr}.{subregion}.genetic.altus.c{complexity}.w{window}.cut{cutoff}.vcf',
+        bam=get_input_reads,
+        ref=path_to_reference + ref_name + '.fasta',
+    output:
+        path_to_output + 'hybrid/altus.ch{chr}.{subregion}.c{complexity}.w{window}.cut{cutoff}.b{sensitivity}.{readtype}.hybrid.vcf'
+    log:
+        path_to_output + 'hybrid/altus.ch{chr}.{subregion}.c{complexity}.w{window}.cut{cutoff}.b{sensitivity}.{readtype}.hybrid.log'
+    shell:
+        '{whatshap} polyphase {input.vcf} {input.bam} -r {input.ref} -p 4 --ignore-read-groups --sample {parent} -B {wildcards.sensitivity} --use-prephasing -o {output} --distrust-genotypes --only-snvs &> {log}'
+
+
+rule pure_phase:
+    input:
+        vcf=path_to_parents + 'ch{chr}.{subregion}.parents.decluttered.vcf',
+        bam=get_input_reads,
+        ref=path_to_reference + ref_name + '.fasta',
+    output:
+        path_to_output + 'hybrid/altus.ch{chr}.{subregion}.b{sensitivity}.{readtype}.pure.vcf'
+    log:
+        path_to_output + 'hybrid/altus.ch{chr}.{subregion}.b{sensitivity}.{readtype}.pure.log'
+    shell:
+        '{whatshap} polyphase {input.vcf} {input.bam} -r {input.ref} -p 4 --ignore-read-groups --sample {parent} -B {wildcards.sensitivity} -o {output} --distrust-genotypes --only-snvs &> {log}'
+
+
+rule genetic_phase:
+    input:
+        parent=path_to_parents + 'ch{chr}.{subregion}{samplesize}.parents.decluttered.vcf',
+        progeny=path_to_progeny + 'ch{chr}.{subregion}.progeny.decluttered.vcf.gz',
+        pedfile=path_to_pedfile
+    output:
+        path_to_output + 'ch{chr}.{subregion}{samplesize}.genetic.altus.c{complexity}.w{window}.cut{cutoff,\d+}.vcf'
+    params:
+        genotype_mode=get_genotype_mode,
+        complexity=get_complexity
+    shell:
+        '{whatshap} polyphasegenetic {input.parent} {input.pedfile} -P {input.progeny} -p 4 -o {output} --sample {parent} -C {params.complexity} --scoring-window {wildcards.window} --ratio-cutoff {wildcards.cutoff} {params.genotype_mode} --only-snvs'
+
+
+rule genetic_phase_subsampled:
+    input:
+        parent=path_to_parents + '{region}.parents.decluttered.vcf',
+        progeny=path_to_progeny + '{region}.progeny.decluttered.vcf.gz',
+        pedfile=ped_prefix + '{subsize}_{run}.txt'
+    output:
+        path_to_output + '{region}.genetic.altus.c{complexity}.w{window}.cut{cutoff,\d+}.sub{subsize}-{run}.vcf'
+    log:
+        path_to_output + '{region}.genetic.altus.c{complexity}.w{window}.cut{cutoff}.sub{subsize}-{run}.log'
+    shell:
+        '{whatshap} polyphasegenetic {input.parent} {input.pedfile} -P {input.progeny} -p 4 -o {output} --sample {parent} -C {wildcards.complexity} --scoring-window {wildcards.window} --ratio-cutoff {wildcards.cutoff} --distrust-genotypes --only-snvs 2> {log}'
+
+
+rule compare:
+    input:
+        phase=path_to_output + 'ch{chr}.{subregion}{samplesize}.genetic.altus.{suffix}.vcf',
+        truth='ch{chr}/ch{chr}.combined.vcf.gz',
+        truthindex='ch{chr}/ch{chr}.combined.vcf.gz.csi'
+    output:
+        path_to_csv + 'ch{chr}.{subregion}{samplesize}.genetic.altus.{suffix}.tsv'
+    shell:
+        '{whatshap} compare {input.phase} {input.truth} -p 4 --tsv-pairwise {output}'
+
+
+rule compare_hybrid:
+    input:
+        phase=path_to_output + 'hybrid/altus.ch{chr}.{subregion}.{suffix}.{readtype}.{mode}.vcf',
+        truth='ch{chr}/ch{chr}.combined.vcf.gz',
+        truthindex='ch{chr}/ch{chr}.combined.vcf.gz.csi'
+    output:
+        path_to_csv + 'hybrid-pair/altus.ch{chr}.{subregion}.{suffix}.{readtype}.{mode}.tsv'
+    log:
+        path_to_csv + 'hybrid-pair/altus.ch{chr}.{subregion}.{suffix}.{readtype}.{mode}.log'
+    shell:
+        '{whatshap} compare {input.phase} {input.truth} -p 4 --tsv-pairwise {output} &> {log}'
+
+
+rule stats_hybrid:
+    input:
+        phase=path_to_output + 'hybrid/altus.ch{chr}.{subregion}.{suffix}.{readtype}.{mode}.vcf',
+        lengths=path_to_lengthfile
+    output:
+        path_to_csv + 'hybrid-stats/altus.ch{chr}.{subregion}.{suffix}.{readtype}.{mode}.tsv'
+    log:
+        path_to_csv + 'hybrid-stats/altus.ch{chr}.{subregion}.{suffix}.{readtype}.{mode}.log'
+    shell:
+        '{whatshap} stats {input.phase} --chr-lengths {input.lengths} --sample {parent} --tsv {output} > {log}'
+
+
+rule create_csv:
+    input:
+        expand(path_to_csv + '{{subregion}}.genetic.altus.c{{complexity}}.{{options}}.sub{subsize}-{run}.tsv', subsize=pop_sizes, run=range(runs_per_pop_size)),
+        expand(path_to_csv + '{{subregion}}.genetic.altus.c{{complexity}}.{{options}}.sub{subsize}-{run}.tsv', subsize=[full_pop_size], run=[1])
+    output:
+        path_to_csv + '{subregion}.genetic.altus.c{complexity}.{options}.avg.csv'
+    shell:
+        'python3 scripts/compare_samplescaling.py {path_to_csv} {output} {wildcards.subregion} {wildcards.complexity}'
+
+
+rule cut_vcf_parents_subsampled:
+    input:
+        vcf=path_to_parents + 'AC_parents.ch{chr}-{percentage}.vcf.gz',
+        index=path_to_parents + 'AC_parents.ch{chr}-{percentage}.vcf.gz.csi'
+    output:
+        temp(path_to_parents + 'ch{chr}.{subregion}-{percentage}.parents.cluttered.vcf')
+    params:
+        name=lambda wildcards: chr_name[wildcards.chr],
+        start=lambda wildcards: region_start[wildcards.chr],
+        end=lambda wildcards: region_end[wildcards.chr]
+    shell:
+        'bcftools view {input.vcf} -O v -o {output} -r {ref_name}{params.name}:{params.start}-{params.end}'
+
+
+rule cut_vcf_parents:
+    input:
+        vcf=path_to_parents + main_parent_vcf,
+        index=path_to_parents + main_parent_vcf + '.csi'
+    output:
+        temp(path_to_parents + 'ch{chr}.{subregion}.parents.cluttered.vcf')
+    params:
+        name=lambda wildcards: chr_name[wildcards.chr],
+        start=lambda wildcards: region_start[wildcards.chr],
+        end=lambda wildcards: region_end[wildcards.chr]
+    shell:
+        'bcftools view {input.vcf} -O v -o {output} -r {ref_name}{params.name}:{params.start}-{params.end}'
+
+
+rule declutter_parent:
+    input:
+        '{prefix}.parents.cluttered.vcf'
+    output:
+        '{prefix}.parents.decluttered.vcf'
+    shell:
+        'python3 scripts/declutter_vcf.py {input} {output}'
+
+
+rule cut_vcf_progeny:
+    input:
+        vcf=path_to_progeny + main_progeny_vcf,
+        index=path_to_progeny + main_progeny_vcf + '.csi'
+    output:
+        temp(path_to_progeny + 'ch{chr}.{subregion}.progeny.cluttered.vcf')
+    params:
+        name=lambda wildcards: chr_name[wildcards.chr],
+        start=lambda wildcards: region_start[wildcards.chr],
+        end=lambda wildcards: region_end[wildcards.chr]
+    shell:
+        'bcftools view {input.vcf} -O v -o {output} -r {ref_name}{params.name}:{params.start}-{params.end}'
+
+
+rule declutter_progeny:
+    input:
+        '{prefix}.progeny.cluttered.vcf'
+    output:
+        temp('{prefix}.progeny.decluttered.vcf')
+    shell:
+        'python3 scripts/declutter_vcf.py {input} {output}'
+
+
+rule compress_progeny:
+    input:
+        '{prefix}.progeny.decluttered.vcf'
+    output:
+        '{prefix}.progeny.decluttered.vcf.gz'
+    run:
+        shell('bgzip < {input} -o {output}')
+
+
+# Creating downsampled files
+rule extract_chromosome:
+    input:
+        bam='{prefix}.srt.bam',
+        bai='{prefix}.srt.bam.bai'
+    output:
+        bam='{prefix}.srt.ch{chr}.bam',
+        bai='{prefix}.srt.ch{chr}.bam.bai'
+    run:
+        shell("sambamba view -f sam -h -o {output.bam}.sam {input.bam} {ref_name}ch{wildcards.chr}:1-90000000")
+        shell("sed -i '/chloroplast/d' {output.bam}.sam | sed -i '/mitochondrial/d' {output.bam}.sam")
+        shell("sambamba view -f bam -h -S -o {output.bam} {output.bam}.sam")
+        shell("rm {output.bam}.sam")
+
+
+rule downsample_bam:
+    input:
+        bam='{prefix}.srt.ch{chr}.bam',
+        bai='{prefix}.srt.ch{chr}.bam.bai'
+    output:
+        bam='{prefix}.srt.ch{chr}-{percentage}.unsorted.bam'
+    run:
+        shell('gatk DownsampleSam -I {input.bam} -O {output.bam} -P {wildcards.percentage}')
+
+
+rule sort_bam:
+    input:
+        bam='{prefix}.srt.ch{chr}-{percentage}.unsorted.bam'
+    output:
+        bam='{prefix}.srt.ch{chr}-{percentage}.bam',
+        bai='{prefix}.srt.ch{chr}-{percentage}.bam.bai'
+    shell:
+        'sambamba sort -o {output.bam} {input.bam}'
+
+
+rule call_variants:
+    input:
+        bam=path_to_shortreads + '{prefix}.bam',
+        bai=path_to_shortreads + '{prefix}.bam.bai',
+        ref=path_to_reference + ref_name + '.fasta',
+        fai=path_to_reference + ref_name + '.fasta.fai',
+        dict=path_to_reference + ref_name + '.dict'
+    output:
+        gvcf=path_to_parents + '{prefix}.bam.g.vcf.gz'
+    shell:
+        'gatk --java-options "-Xmx4g" HaplotypeCaller --native-pair-hmm-threads 4 -R {input.ref} -I {input.bam} -O {output.gvcf} -ERC GVCF --sample-ploidy 4'
+
+
+rule merge_gvcf:
+    input:
+        altus=path_to_parents + parent + '.SolyntusV1.1_CPMT.srt.ch{chr}-{percentage}.bam.g.vcf.gz',
+        colomba=path_to_parents + co_parent + '.SolyntusV1.1_CPMT.srt.ch{chr}-{percentage}.bam.g.vcf.gz',
+        ref=path_to_reference + ref_name + '.fasta',
+        fai=path_to_reference + ref_name + '.fasta.fai',
+        dict=path_to_reference + ref_name + '.dict'
+    output:
+        vcf=path_to_parents + 'AC_parents.ch{chr}-{percentage}.vcf'
+    run:
+        shell('mkdir {output.vcf}.temp -p')
+        shell('gatk --java-options "-Xmx100g -Xms100g" GenomicsDBImport --variant {input.altus} --variant {input.colomba} --genomicsdb-workspace-path {output.vcf}.genomicsdb --tmp-dir {output.vcf}.temp --reader-threads 10 -L StSOLv1.1ch{wildcards.chr}')
+        shell('gatk --java-options "-Xmx40g" GenotypeGVCFs -R {input.ref} -V gendb://{output.vcf}.genomicsdb -O {output.vcf}')
+
+
+rule compress_vcf:
+    input:
+        path_to_parents + 'AC_parents.ch{chr}-{percentage}.vcf'
+    output:
+        path_to_parents + 'AC_parents.ch{chr}-{percentage}.vcf.gz'
+    shell:
+        'bgzip < {input} -o {output}'
+
+
+rule index_vcf:
+    input:
+        '{prefix}.vcf.gz'
+    output:
+        '{prefix}.vcf.gz.csi'
+    shell:
+        'bcftools index {input}'

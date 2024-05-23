@@ -1,0 +1,372 @@
+## given hgsvc trio phased vcfs, create artificial polyploid vcf 
+
+configfile:'config.tetra.json'
+
+diploid_bams = config['path_diploid_bams']
+diploid_vcfs = config['path_diploid_vcfs']
+reference_fastq = config['path_reference_fastq']
+path_to_main = config['path_to_main']
+
+import os
+import pysam
+
+# whatshap
+whatshap = config['whatshap']
+
+# coverages
+coverages = config['coverages']
+
+# chromosomes
+chromosomes = config['chromosomes']
+
+# please use 'hexaploid' for three trios and 'tetraploid' for two trios
+dataset = config['dataset']
+
+# samples to be used for simulation
+sample_names = ['HG00514', 'NA19240', 'HG00733'] if dataset in ['hexa', 'penta'] else ['HG00514', 'NA19240'] if dataset == 'tetra' else []
+half_samples = ['HG00733'] if dataset == 'penta' else []
+
+# read types
+readtypes = config['readtypes']
+
+ruleorder: only_biallelic > make_polyploid
+ruleorder: merge_real_bams > downsample_bam
+
+samples = {
+    'SH032': ['HG00512', 'HG00513', 'HG00514'],
+    'Y117': ['NA19239', 'NA19238', 'NA19240'],
+    'PR05': ['HG00731', 'HG00732', 'HG00733']
+}
+
+sample2fam = {}
+for fam, sample_list in samples.items():
+    for sample in sample_list:
+        sample2fam[sample] = fam
+
+rule all:
+    input:
+        expand(path_to_main+'vcf/{dataset}ploid.chr{chrom}.vcf', dataset=dataset, chrom=chromosomes),
+        expand(path_to_main+'vcf/{dataset}ploid.chr{chrom}.biallelic.vcf', dataset=dataset, chrom=chromosomes),
+        expand(path_to_main+'vcf/{dataset}ploid.chr{chrom}.biallelic-unphased.vcf.gz', dataset=dataset, chrom=chromosomes),
+        expand(path_to_main+'vcf/{dataset}ploid.chr{chrom}.biallelic-unphased.vcf.gz.tbi', dataset=dataset, chrom=chromosomes),
+        expand(path_to_main+'{readtype}-reads/bam/{dataset}ploid-{readtype}.chr{chrom}.cov{cov}.bam', dataset=dataset, chrom=chromosomes, cov=coverages, readtype=readtypes),
+
+########## create polyploid VCFs by merging two (or three) diploid samples ##########
+
+# create union of varians
+rule vcf_union:
+    input:
+        vcfs=expand(diploid_vcfs+'{sample}.chr{{chrom}}.vcf.gz', sample=sample_names)
+    output:
+        path_to_main+'vcf/intermediate-files/union.chr{chrom}.vcf.gz'
+    run:
+        shell('rtg vcfmerge -o '+path_to_main+'vcf/union.chr{wildcards.chrom}.tmp.vcf.gz {input}')
+        shell('rtg vcfsubset --keep-sample HG00514 -i '+path_to_main+'vcf/union.chr{wildcards.chrom}.tmp.vcf.gz -o {output}')
+        shell('rm '+path_to_main+'vcf/union.chr{wildcards.chrom}.tmp.vcf.gz*')
+
+# faidx
+rule faidx:
+    input:
+        path_to_main+'fasta/hg38.chr{chrom}.fa'
+    output:
+        path_to_main+'fasta/hg38.chr{chrom}.fa.fai'
+    shell:
+        'samtools faidx {input}'
+
+# retype union of variants
+rule retype_variants:
+    input:
+        vcf=path_to_main+'vcf/intermediate-files/union.chr{chrom}.vcf.gz',
+        bam=diploid_bams+'{sample}.chr{chrom}.bam',
+        fasta=path_to_main+'fasta/hg38.chr{chrom}.fa',
+        fai=path_to_main+'fasta/hg38.chr{chrom}.fa.fai'
+    output:
+        'retyped/{sample}.chr{chrom}.vcf.gz'
+    run:
+        shell('{whatshap} genotype --ignore-read-groups -o retyped/{wildcards.sample}.chr{wildcards.chrom}.vcf --reference {input.fasta} {input.vcf} {input.bam}')
+        shell("cat retyped/{wildcards.sample}.chr{wildcards.chrom}.vcf | sed 's/FORMAT\\tHG00514/FORMAT\\tretyped/g'  | bgzip > {output}")
+        shell('tabix -p vcf {output}')
+
+# merge phased and retyped vcfs.
+rule combine_vcfs:
+    input:
+        retyped='retyped/{sample}.chr{chrom}.vcf.gz',
+        phased=diploid_vcfs+'{sample}.chr{chrom}.vcf.gz'
+    output:
+        'retyped/{sample}.chr{chrom}.combined.vcf'
+    shell:
+        'bcftools merge -o {output} {input.phased} {input.retyped}'
+
+# add PS tag to homozygous genotypes since whatshap leaves them as 0/0 or 1/1
+rule add_tag:
+    input:
+        'retyped/{sample}.chr{chrom}.combined.vcf'
+    output:
+        path_to_main+'vcf/{sample,(HG00514|NA19240|HG00733)}.chr{chrom}.all-variants.vcf'
+    run:
+        result = open(output[0], 'w')
+        last_tag = 0
+        for line in open(input[0], 'r'):
+            if line[0] == '#':
+                # remove last column from header line
+                if 'CHROM' in line:
+                    result.write('\t'.join(line.split()[:-1]) + '\n')
+                else:
+                    result.write(line)
+                continue
+            else:
+                splitted = line.split()
+                # genotype and PS tag data
+                phased = splitted[9].split(':')
+                retyped = splitted[10].split(':')
+                # either take phased gentype, or take retyped genotype in case it is 0/0
+                if phased[0] not in [ './.', '.']:
+                    genotype = phased[0]
+                elif retyped[0] == '0/0':
+                    genotype = '0|0'
+                else:
+                    continue
+                # if homozygous genotype, change notation and add last PS tag seen
+                if genotype in ['0|0', '1|1']:
+                    splitted[-2] = genotype + ':' + str(last_tag)
+                    splitted[8] = 'GT:PS'
+                else:
+                    assert genotype in ['0|1', '1|0']
+                    last_tag = int(phased[1])
+                print(line, genotype)
+                assert(genotype in ['1|1','1|0','0|1','0|0'])
+                result.write('\t'.join(splitted[:-1]) + '\n')
+
+# compress and index the vcfs
+rule compress_vcf:
+    input:
+        path_to_main+'vcf/{sample,(HG00514|NA19240|HG00733)}.chr{chrom}.all-variants.vcf'
+    output:
+        path_to_main+'vcf/{sample,(HG00514|NA19240|HG00733)}.chr{chrom}.all-variants.vcf.gz',
+        path_to_main+'vcf/{sample,(HG00514|NA19240|HG00733)}.chr{chrom}.all-variants.vcf.gz.tbi'
+    run:
+        shell('bgzip -c {input} > {output}')
+        shell('tabix -p vcf {output}')
+
+# merge sample vcfs
+rule merge_vcfs:
+    input:
+        expand(path_to_main+'vcf/{sample}.chr{{chrom}}.all-variants.vcf.gz', sample=sample_names)
+    output:
+        path_to_main+'vcf/intermediate-files/multisample.chr{chrom}.vcf'
+    shell:
+        'bcftools merge {input} > {output}'
+
+# create (artificial) polyploid vcf by merging genotypes
+rule make_polyploid:
+    input:
+        path_to_main+'vcf/intermediate-files/multisample.chr{chrom}.vcf'
+    output:
+        path_to_main+'vcf/{dataset}ploid.chr{chrom}.vcf'
+    run:
+        result = open(output[0],'w')
+        taken_sample_fields = []
+        halfed_sample_fields = []
+        for line in open(input[0],'r'):
+            if line[0] == '#':
+                if line[1] == '#':
+                    result.write(line)
+                    continue
+                else:
+                    # header line: replace sample name
+                    splitted = line.split()
+                    taken_sample_fields = [i for i in range(9, len(splitted)) if splitted[i] in sample_names]
+                    halfed_sample_fields = [i for i in range(9, len(splitted)) if splitted[i] in half_samples]
+                    new_sample = '_'.join(name for name in [splitted[i] for i in taken_sample_fields])
+                    result.write('\t'.join( [f for f in splitted[0:9]] + [new_sample] ) + '\n')
+                    continue
+            splitted = line.split()
+            new_line = splitted[0:9]
+            alleles = []
+            tags = []
+            for field_id in taken_sample_fields:
+                field = splitted[field_id]
+                if field[0] != '.':
+                    if field[1] == '|':
+                        # only take both alleles if sample is not halfed
+                        if field_id in halfed_sample_fields:
+                            alleles.extend([field[0]])
+                        else:
+                            alleles.extend([field[0],field[2]])
+                        # all phased genotypes should have PS tags
+                        assert len(field) > 3
+                        # PS tag
+                        infos = field.split(':')
+                        tags.append(int(infos[1]))
+                        
+                    else:
+                        # after the previous steps, there cannot be any unphased genotypes
+                        assert(False)
+                else:
+                    alleles = []
+                    break
+            # alleles present?
+            if len(alleles) == 0:
+                continue
+            # there should be a PS tag for each diploid phasing
+            assert len(alleles) <= 2*len(tags) <= len(alleles) + 1
+            # if homozygous, skip
+            if alleles.count(alleles[0]) == len(alleles):
+                continue
+            # new block whenever one of the diploid haplotypes is interrupted
+            new_tag = max(tags)
+            new_line.append('|'.join(alleles) + ':' + str(new_tag))
+            new_line[8] = 'GT:PS'
+            result.write('\t'.join(new_line) + '\n')
+
+
+########## simulate reads ##########
+
+# based on sample vcfs, generate haplotype sequences for each (diploid) individual
+rule generate_haplotypes:
+    input:
+        vcf=path_to_main+'vcf/{sample,(HG00514|NA19240|HG00733)}.chr{chrom}.all-variants.vcf',
+        fasta=path_to_main+'fasta/hg38.chr{chrom}.fa'
+    output:
+        haplo1=path_to_main+'simulated-reads/haplotypes/{sample}.chr{chrom}.1.fasta',
+        haplo2=path_to_main+'simulated-reads/haplotypes/{sample}.chr{chrom}.2.fasta'
+    log:
+        path_to_main+'simulated-reads/haplotypes/{sample}.chr{chrom}.log'
+    run:
+        shell('python3 genomesimulator.py -c {wildcards.chrom} {input.vcf} {input.fasta} {path_to_main}simulated-reads/haplotypes > {log} 2>&1')
+
+# simulate reads for each haplotype
+rule simulate_reads:
+    input:
+        sample=reference_fastq,
+        haplotype=path_to_main+'simulated-reads/haplotypes/{sample}.chr{chrom}.{number,[1-2]}.fasta'
+    output:
+        fastq=path_to_main+'simulated-reads/reads/{dataset}-{sample}.chr{chrom}.cov{coverage}.{number,[1-2]}.fastq.gz',
+        maf=path_to_main+'simulated-reads/reads/{dataset}-{sample}.chr{chrom}.cov{coverage}.{number,[1-2]}.maf.gz'
+    log:
+        path_to_main+'simulated-reads/reads/{dataset}-{sample}.chr{chrom}.cov{coverage}.{number,[1-2]}.fastq.log'
+    run:
+        halfcoverage=int(wildcards.coverage)/(len(sample_names)*2)
+        seed = abs(hash(output.fastq))
+        shell('mkdir -p '+path_to_main+'simulated-reads/reads/{wildcards.dataset}-{wildcards.sample}.chr{wildcards.chrom}.cov{wildcards.coverage}.{wildcards.number}')
+        shell('time (pbsim --seed {seed} --prefix '+path_to_main+'simulated-reads/reads/{wildcards.dataset}-{wildcards.sample}.chr{wildcards.chrom}.cov{wildcards.coverage}.{wildcards.number}/{wildcards.dataset}-{wildcards.sample}.chr{wildcards.chrom}.cov{wildcards.coverage}.{wildcards.number} --depth {halfcoverage} --sample-fastq {input.sample} {input.haplotype}) > {log} 2>&1')
+        shell('awk \'NR%4==1 {{printf("%s_{wildcards.sample}_HAP{wildcards.number}\\n",$0)}} NR%4!=1 {{print}}\' '+path_to_main+'simulated-reads/reads/{wildcards.dataset}-{wildcards.sample}.chr{wildcards.chrom}.cov{wildcards.coverage}.{wildcards.number}/{wildcards.dataset}-{wildcards.sample}.chr{wildcards.chrom}.cov{wildcards.coverage}.{wildcards.number}_0001.fastq | gzip > {output.fastq}')
+        shell('cat '+path_to_main+'simulated-reads/reads/{wildcards.dataset}-{wildcards.sample}.chr{wildcards.chrom}.cov{wildcards.coverage}.{wildcards.number}/{wildcards.dataset}-{wildcards.sample}.chr{wildcards.chrom}.cov{wildcards.coverage}.{wildcards.number}_0001.maf | gzip > {output.maf}')
+        shell('rm -rf '+path_to_main+'simulated-reads/reads/{wildcards.dataset}-{wildcards.sample}.chr{wildcards.chrom}.cov{wildcards.coverage}.{wildcards.number}/')
+
+# index reference
+rule bwa_index:
+    input:
+        path_to_main+'fasta/hg38.chr{chrom}.fa'
+    output:
+        path_to_main+'fasta/hg38.chr{chrom}.fa.amb',
+        path_to_main+'fasta/hg38.chr{chrom}.fa.ann',
+        path_to_main+'fasta/hg38.chr{chrom}.fa.bwt',
+        path_to_main+'fasta/hg38.chr{chrom}.fa.pac',
+        path_to_main+'fasta/hg38.chr{chrom}.fa.sa'
+    shell:
+        'bwa index {input}'
+
+# map the simulated reads
+rule map_reads:
+    input:
+        fastq=path_to_main+'simulated-reads/reads/{dataset}-{sample}.chr{chrom}.cov{coverage}.{number,[1-2]}.fastq.gz',
+        fasta=path_to_main+'fasta/hg38.chr{chrom}.fa',
+        pac=path_to_main+'fasta/hg38.chr{chrom}.fa.pac'
+    output:
+        path_to_main+'simulated-reads/bam/{dataset}-{sample}.chr{chrom}.cov{coverage}.{number,[1-2]}.bam'
+    threads: 3
+    run:
+        shell('bwa mem -x pacbio -t 4 {input.fasta} {input.fastq} | samtools view -bS - | samtools sort - -o {output}')
+        shell('samtools index {output}')
+
+# merge all haploid bams into a polyploid one
+rule merge_bams:
+    input:
+        bams = expand(path_to_main+'simulated-reads/bam/{{dataset}}-{sample}.chr{{chrom}}.cov{{coverage}}.{number}.bam', sample=sample_names, number=[1,2])
+    output:
+        path_to_main+'simulated-reads/bam/{dataset}ploid-simulated.chr{chrom}.cov{coverage}.bam'
+    run:
+        shell('samtools merge {output} {input.bams}')
+        shell('samtools index {output}')
+        
+# create version of VCF containing only biallelic variants
+
+rule only_biallelic:
+    input:
+        path_to_main+'vcf/{dataset}ploid.chr{chrom}.vcf'
+    output:
+        path_to_main+'vcf/{dataset}ploid.chr{chrom}.biallelic.vcf'
+    shell:
+        'bcftools view --max-alleles 2 {input} > {output}'
+
+# create unphased version of the VCF
+rule remove_phase_information:
+    input:
+        path_to_main+'vcf/{dataset}ploid.chr{chrom}.biallelic.vcf'
+    output:
+        path_to_main+'vcf/{dataset}ploid.chr{chrom}.biallelic-unphased.vcf.gz'
+    run:
+        shell('sed -e \'s#|#/#g\' {input} | rtg vcfsubset --remove-format=PS -i - -o {output}')
+
+#rule compress_vcf:
+#    input:
+#        path_to_main+'vcf/{prefix}.vcf'
+#    output:
+#        path_to_main+'vcf/{prefix}.vcf.gz'
+#    shell:
+#        'bgzip < {input} > {output}'
+
+rule index_vcf:
+    input:
+        path_to_main+'vcf/{prefix}.vcf.gz'
+    output:
+        path_to_main+'vcf/{prefix}.vcf.gz.tbi'
+    shell:
+        'tabix -p vcf {input}'
+
+
+########## create equivalent real datasets by merging diploid BAMs ##########
+
+# compute coverage of real BAMs (needed for downsampling)
+rule compute_coverage:
+    input:
+        diploid_bams+'{sample}.chr{chrom}.bam'
+    output:
+        path_to_main+'real-reads/coverage/{sample}.chr{chrom}.cov'
+    run:
+        bam=pysam.Samfile(input[0])
+        length=None
+        for e in bam.header.get('SQ'):
+            if not any((c.isalpha() and c!='X') for c in e['SN'][3:]):
+                if e['SN'][3:] == wildcards.chrom:
+                    length = e['LN']
+        assert length != None
+        print(length)
+        shell("samtools depth {input} | awk '{{sum+=$3}} END {{ print sum/{length} }}' > {output}")
+
+# downsample BAM
+rule downsample_bam:
+    input:
+        bam=diploid_bams+'{sample}.chr{chrom}.bam',
+        coverage=path_to_main+'real-reads/coverage/{sample}.chr{chrom}.cov'
+    output:
+        path_to_main+'real-reads/bam/{dataset}-{sample}.chr{chrom}.cov{coverage}.bam'
+    run:
+        # downsample to half the coverage (since we merge BAMs later)
+        input_coverage = float(open(input.coverage).readline())
+        new_coverage = float(wildcards.coverage) / len(sample_names)
+        p = min(1.0, new_coverage / input_coverage)
+        print('using p=' + str(p))
+        shell('samtools view -h -bs {p} {input.bam} > {output}')
+        shell('samtools index {output}')
+
+# merge real BAMs 
+rule merge_real_bams:
+    input:
+        expand(path_to_main+'real-reads/bam/{{dataset}}-{sample}.chr{{chrom}}.cov{{coverage}}.bam', sample=sample_names)
+    output:
+        path_to_main+'real-reads/bam/{dataset}ploid-real.chr{chrom}.cov{coverage}.bam'
+    run:
+        shell('samtools merge {output} {input}')
+        shell('samtools index {output}')

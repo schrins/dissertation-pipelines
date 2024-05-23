@@ -1,0 +1,159 @@
+configfile:'config.json'
+
+# paths
+gfa_file           = config['path_to_gfa']
+ref_file           = config['path_to_reference'] + config['ref_name'] + ".fasta"
+path_to_parents    = config['path_to_parents']
+
+# names
+ref_name           = config['ref_name']
+parent_short       = config['parent_short']
+parent             = config['parent']
+
+# regions
+region_names       = config['region_names']
+region_start       = config['region_start']
+region_end         = config['region_end']
+chr_name           = config['chr_name']
+chr_long_name      = config['chr_long_name']
+chr_map            = config['chr_map']
+chr_list           = config['chr_list']
+contigs            = config['contigs']
+
+
+rule all:
+    input:
+        expand('{chromosome}/{chromosome}.sync.vcf.gz', chromosome=chr_list),
+        expand('{chromosome}/{chromosome}.sync.vcf.gz.csi', chromosome=chr_list)
+
+
+rule extract_sequences:
+    input:
+        gfa_file
+    output:
+        'alignments/all_graph_nodes_single.fasta'
+    shell:
+        'python3 scripts/gfa2fasta.py {input} {output}'
+
+
+rule create_bam:
+    input:
+        'alignments/all_graph_nodes_single.fasta'
+    output:
+        'alignments/all_graph_nodes_single.bam'
+    shell:
+        'minimap2 -ax asm20 {ref_file} {input} -t 64 -o {output}'
+
+
+rule sort_bam:
+    input:
+        bam='{prefix}.bam',
+        bai='{prefix}.bam.bai',
+        ref=ref_file
+    output:
+        '{prefix}_sorted.bam'
+    shell:
+        'samtools sort {input.bam} -m 16G -@ 24 -o {output} --reference {input.ref}'
+
+
+rule index_bam:
+    input:
+        '{prefix}.bam'
+    output:
+        '{prefix}.bam.bai'
+    shell:
+        'samtools index {input}'
+
+
+rule create_paf:
+    input:
+        '{prefix}.fasta'
+    output:
+        '{prefix}.paf'
+    shell:
+        'minimap2 -x asm20 {ref_file} {input} -t 64 --cs -o {output}'
+        #'pbmm2 align --preset CCS {ref_file} {input} -t 64 --cs -o {output}'
+
+
+rule extract_contig:
+    input:
+        'alignments/all_graph_nodes_single.paf'
+    output:
+        '{chr}/{chr}.{contig}.paf'
+    params:
+        long_name=lambda wildcards: chr_long_name[chr_map[wildcards.chr]]
+    shell:
+        'grep "{wildcards.contig}" {input} | grep "{params.long_name}" > {output}'
+
+
+rule create_vcf:
+    input:
+        '{chr}/{chr}.{contig}.paf'
+    output:
+        '{chr}/{chr}.{contig}.single.vcf.gz'
+    shell:
+        'sort -k6,6 -k8,8 {input} | paftools.js call -f {ref_file} -s {parent_short} -l 5000 -L 5000 - | bgzip > {output}'
+
+
+def get_input_vcfs(wildcards):
+    return [f"{wildcards.chr}/{wildcards.chr}.{contig}.single.vcf.vcf.gz" for contig in contigs[wildcards.chr]]
+
+
+def get_input_indices(wildcards):
+    return [f"{wildcards.chr}/{wildcards.chr}.{contig}.single.vcf.vcf.gz.csi" for contig in contigs[wildcards.chr]]
+
+
+def get_input_bla(wildcards):
+    return {name: [f"{wildcards.chr}/{wildcards.chr}.{contig}.single.{suffix}" for contig in contigs[chr_map[wildcards.chr]]] for (name, suffix) in zip(["files", "indices"], ["vcf.gz", "vcf.gz.csi"])}
+
+
+rule merge_vcf:
+    input:
+        unpack(get_input_bla)
+    output:
+        '{chr}/{chr}.combined_all.vcf.gz'
+    shell:
+        'bcftools merge -0 -m both {input.files} --force-samples | bgzip > {output}'
+
+
+rule cut_vcf:
+    input:
+        '{chr}/{chr}.combined_all.vcf.gz',
+        '{chr}/{chr}.combined_all.vcf.gz.csi'
+    output:
+        '{chr}/{chr}.combined.cut.vcf.gz'
+    params:
+        long_name=lambda wildcards: chr_long_name[chr_map[wildcards.chr]],
+        start=lambda wildcards: region_start[chr_map[wildcards.chr]],
+        end=lambda wildcards: region_end[chr_map[wildcards.chr]]
+    shell:
+        'bcftools view {input} -O z -o {output} -r {params.long_name}:{params.start}-{params.end}'
+
+
+rule merge_samples:
+    input:
+        '{chr}/{chr}.combined.cut.vcf.gz'
+    output:
+        '{chr}/{chr}.combined.vcf.gz'
+    shell:
+        'bgzip -d < {input} | python3 scripts/merge_monoploid.py {parent} | bgzip > {output}'
+
+
+rule synchronize_samples:
+    input:
+        '{chr}/{chr}.combined.vcf.gz'
+    output:
+        '{chr}/{chr}.sync.vcf.gz'
+    params:
+        parent_file=lambda wildcards: path_to_parents + region_names[chr_map[wildcards.chr]] + ".parents.decluttered.vcf"
+    shell:
+        'bgzip -d  < {input} | python3 scripts/synchronize_alt_alleles.py {params.parent_file} | bgzip > {output}'
+
+
+rule index_vcf:
+    input:
+        '{prefix}.vcf.gz'
+    output:
+        '{prefix}.vcf.gz.csi'
+    shell:
+        'bcftools index {input} -f'

@@ -1,0 +1,15 @@
+{
+    "path_to_reference":"/srv/homes/schrinner/data/pedmec/fa/GCA_000001405.15_GRCh38_no_alt_analysis_set.fasta",
+    "path_to_bamfolder":"/srv/homes/schrinner/data/pedmec/bam/",
+    "path_to_vcffolder":"/srv/homes/schrinner/data/pedmec/vcf/",
+    "path_to_mainvcf":"/srv/homes/schrinner/data/pedmec/vcf/pav_remerged.chr1.vcf",
+    "path_to_ped":"/srv/homes/schrinner/data/pedmec/trio.ped",
+    "path_to_lengthfile":"/srv/homes/schrinner/data/pedmec/chrlen.txt",
+    "whatshap":"whatshap",
+    "readtypes":["pacbio","hifi"],
+    "child":"HG002",
+    "mother":"HG003",
+    "father":"HG004",
+    "readtype_prefix":{"hifi":".SequelII.merged_15kb_20kb.pbmm2.GRCh38.haplotag.10x.chr1","pacbio":"_PacBio_chr1_GRCh38"},
+    "rowlimits":["16","64","256","1024","4096"],
+}

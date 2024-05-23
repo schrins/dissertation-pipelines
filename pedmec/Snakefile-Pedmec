@@ -1,0 +1,183 @@
+configfile:'config.json'
+
+# data directories
+path_to_reference = config['path_to_reference']
+path_to_bamfolder = config['path_to_bamfolder']
+path_to_vcffolder = config['path_to_vcffolder']
+path_to_mainvcf = config['path_to_mainvcf']
+path_to_ped = config['path_to_ped']
+path_to_lengthfile = config['path_to_lengthfile']
+
+# results folder
+results='results-thesis-Apr24'
+
+# path to whatshap
+whatshap = config['whatshap']
+
+# samples
+readtypes = config['readtypes']
+readtype_prefix = config['readtype_prefix']
+child = config['child']
+mother = config['mother']
+father = config['father']
+
+# parameters
+rowlimits = config['rowlimits']
+
+rule all:
+    input:
+        expand('{results}/evaluation/{readtype}-single/whatshap-exact-C{coverage}/whatshap-exact-C{coverage}.{readtype}.{which}.tsv', results=results, readtype=readtypes, coverage=[5, 10, 15], which=['stats','pair']),
+        expand('{results}/evaluation/{readtype}-single/whatshap-L{rowlimit}-C{coverage}{mutation}/whatshap-L{rowlimit}-C{coverage}{mutation}.{readtype}.{which}.tsv', results=results, readtype=readtypes, rowlimit=rowlimits, coverage=[5, 10, 15, 30, 0], mutation=['-mut','-no-mut'], which=['stats','pair']),
+        expand('{results}/evaluation/{readtype}-trio/whatshap-exact-C{coverage}/whatshap-exact-C{coverage}.{readtype}.{which}.tsv', results=results, readtype=readtypes, coverage=[9, 12, 15], which=['stats','pair']),
+        expand('{results}/evaluation/{readtype}-trio/whatshap-L{rowlimit}-C{coverage}{mutation}/whatshap-L{rowlimit}-C{coverage}{mutation}.{readtype}.{which}.tsv', results=results, readtype=readtypes, rowlimit=rowlimits, coverage=[9, 12, 15, 30, 60, 90], mutation=['-mut','-no-mut'], which=['stats','pair'])
+
+
+# input data for phasing and evaluation
+def input_vcf_phased(wildcards):
+    return path_to_mainvcf
+
+def input_vcf_unphased(wildcards):
+    return path_to_mainvcf
+
+def reference(wildcards):
+    return path_to_reference
+
+def bam_child(wildcards):
+    if wildcards.readtype in ['pacbio', 'hifi']:
+        return path_to_bamfolder + child + readtype_prefix[wildcards.readtype] + '.bam'
+
+def bam_mother(wildcards):
+    if wildcards.readtype in ['pacbio', 'hifi']:
+        return path_to_bamfolder + mother + readtype_prefix[wildcards.readtype] + '.bam'
+
+def bam_father(wildcards):
+    if wildcards.readtype in ['pacbio', 'hifi']:
+        return path_to_bamfolder + father + readtype_prefix[wildcards.readtype] + '.bam'
+        
+def coverage_setting(wildcards):
+    if int(wildcards.coverage) == 0:
+        return '--no-downsampling'
+    else:
+        return '--internal-downsampling {coverage}'.format(coverage=wildcards.coverage)
+
+
+rule run_exact:
+    input:
+        bam=bam_child,
+        vcf=input_vcf_unphased,
+        ref=reference
+    output:
+        '{results}/phasing/{readtype}-single/whatshap-exact-C{coverage}/whatshap-exact-C{coverage}.{readtype}.vcf'
+    log:
+        '{results}/phasing/{readtype}-single/whatshap-exact-C{coverage}/whatshap-exact-C{coverage}.{readtype}.log'
+    params:
+        coverage_setting=coverage_setting
+    shell:
+        'time {whatshap} phase {input.vcf} {input.bam} -r {input.ref} --algorithm whatshap {params.coverage_setting} -o {output} &> {log}'
+
+
+rule run_heuristic:
+    input:
+        bam=bam_child,
+        vcf=input_vcf_unphased,
+        ref=reference
+    output:
+        '{results}/phasing/{readtype}-single/whatshap-L{rowlimit}-C{coverage, \d+}-no-mut/whatshap-L{rowlimit}-C{coverage}-no-mut.{readtype}.vcf'
+    log:
+        '{results}/phasing/{readtype}-single/whatshap-L{rowlimit}-C{coverage}-no-mut/whatshap-L{rowlimit}-C{coverage}-no-mut.{readtype}.log'
+    params:
+        coverage_setting=coverage_setting
+    shell:
+        'time {whatshap} phase {input.vcf} {input.bam} -r {input.ref} --algorithm heuristic -L {wildcards.rowlimit} {params.coverage_setting} -o {output} &> {log}'
+        
+        
+rule run_heuristic_mutation:
+    input:
+        bam=bam_child,
+        vcf=input_vcf_unphased,
+        ref=reference
+    output:
+        '{results}/phasing/{readtype}-single/whatshap-L{rowlimit}-C{coverage, \d+}-mut/whatshap-L{rowlimit}-C{coverage}-mut.{readtype}.vcf'
+    log:
+        '{results}/phasing/{readtype}-single/whatshap-L{rowlimit}-C{coverage}-mut/whatshap-L{rowlimit}-C{coverage}-mut.{readtype}.log'
+    params:
+        coverage_setting=coverage_setting
+    shell:
+        'time {whatshap} phase {input.vcf} {input.bam} -r {input.ref} --algorithm heuristic -L {wildcards.rowlimit} --allow-mutations {params.coverage_setting} -o {output} &> {log}'
+
+
+rule run_exact_trio:
+    input:
+        child=bam_child,
+        mother=bam_mother,
+        father=bam_father,
+        vcf=input_vcf_unphased,
+        ref=reference,
+        ped=path_to_ped
+    output:
+        '{results}/phasing/{readtype}-trio/whatshap-exact-C{coverage}/whatshap-exact-C{coverage}.{readtype}.vcf'
+    log:
+        '{results}/phasing/{readtype}-trio/whatshap-exact-C{coverage}/whatshap-exact-C{coverage}.{readtype}.log'
+    params:
+        coverage_setting=coverage_setting
+    shell:
+        'time {whatshap} phase {input.vcf} {input.child} {input.mother} {input.father} -r {input.ref} --ped {input.ped} --algorithm whatshap {params.coverage_setting} -o {output} &> {log}'
+
+
+rule run_heuristic_trio:
+    input:
+        child=bam_child,
+        mother=bam_mother,
+        father=bam_father,
+        vcf=input_vcf_unphased,
+        ref=reference,
+        ped=path_to_ped
+    output:
+        '{results}/phasing/{readtype}-trio/whatshap-L{rowlimit}-C{coverage, \d+}-no-mut/whatshap-L{rowlimit}-C{coverage}-no-mut.{readtype}.vcf'
+    log:
+        '{results}/phasing/{readtype}-trio/whatshap-L{rowlimit}-C{coverage}-no-mut/whatshap-L{rowlimit}-C{coverage}-no-mut.{readtype}.log'
+    params:
+        coverage_setting=coverage_setting
+    shell:
+        'time {whatshap} phase {input.vcf} {input.child} {input.mother} {input.father} -r {input.ref} --ped {input.ped} --algorithm heuristic -L {wildcards.rowlimit} {params.coverage_setting} -o {output} &> {log}'
+
+
+rule run_heuristic_trio_mutation:
+    input:
+        child=bam_child,
+        mother=bam_mother,
+        father=bam_father,
+        vcf=input_vcf_unphased,
+        ref=reference,
+        ped=path_to_ped
+    output:
+        '{results}/phasing/{readtype}-trio/whatshap-L{rowlimit}-C{coverage, \d+}-mut/whatshap-L{rowlimit}-C{coverage}-mut.{readtype}.vcf'
+    log:
+        '{results}/phasing/{readtype}-trio/whatshap-L{rowlimit}-C{coverage}-mut/whatshap-L{rowlimit}-C{coverage}-mut.{readtype}.log'
+    params:
+        coverage_setting=coverage_setting
+    shell:
+        'time {whatshap} phase {input.vcf} {input.child} {input.mother} {input.father} -r {input.ref} --ped {input.ped} --algorithm heuristic -L {wildcards.rowlimit} --allow-mutations {params.coverage_setting} -o {output} &> {log}'
+
+
+rule evaluate:
+    input:
+        true=input_vcf_phased,
+        phasing='{results}/phasing/{readtype}-{mode}/whatshap-{method}-C{coverage}/whatshap-{method}-C{coverage}.{readtype}.vcf'
+    output:
+        tsv='{results}/evaluation/{readtype}-{mode}/whatshap-{method}-C{coverage}/whatshap-{method}-C{coverage}.{readtype}.pair.tsv'
+    log:
+        '{results}/evaluation/{readtype}-{mode}/whatshap-{method}-C{coverage}/whatshap-{method}-C{coverage}.{readtype}.pair.log'
+    shell:
+        '{whatshap} compare -p 2 {input.true} {input.phasing} --sample {child} --tsv-pairwise {output.tsv} > {log}'
+
+rule stats:
+    input:
+        phasing='{results}/phasing/{readtype}-{mode}/whatshap-{method}-C{coverage}/whatshap-{method}-C{coverage}.{readtype}.vcf',
+        lengths=path_to_lengthfile
+    output:
+        tsv='{results}/evaluation/{readtype}-{mode}/whatshap-{method}-C{coverage}/whatshap-{method}-C{coverage}.{readtype}.stats.tsv'
+    log:
+        '{results}/evaluation/{readtype}-{mode}/whatshap-{method}-C{coverage}/whatshap-{method}-C{coverage}.{readtype}.stats.log'
+    shell:
+        '{whatshap} stats {input.phasing} --chr-lengths {input.lengths} --sample {child} --tsv {output} > {log}'
