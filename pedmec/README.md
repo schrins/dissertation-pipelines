@@ -2,6 +2,10 @@
 
 Here, we describe the performed steps to setup and execute the experiments for Chapter 2.
 
+Exported conda environments:
+`env-pedmec-genetic.yml` - Full package list of used environment
+`env-pedmec-genetic-history.yml` - Prompted package list of used environment
+
 ## Creating a ground truth phasing
 
 The ground truth phasing is based on a high-quality assembly, available on the following repo: https://github.com/marbl/HG002

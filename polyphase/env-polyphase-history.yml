@@ -1,0 +1,16 @@
+name: polypipe
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - snakemake
+  - samtools
+  - bcftools
+  - bwa
+  - ca-certificates
+  - certifi
+  - openssl
+  - rtg-tools
+  - pbsim
+  - scipy=1.11
+prefix: /srv/homes/schrinner/mambaforge/envs/polypipe

@@ -2,6 +2,10 @@
 
 These scripts and pipelines have been used to create the results for Chapter 4.
 
+Exported conda environments:
+`env-polyphase-genetic.yml` - Full package list of used environment
+`env-polyphase-genetic-history.yml` - Prompted package list of used environment
+
 ## Data availability
 
 All files marked with either `(zenodo)`, `(public)` or `(ncbi)`, depending on whether the required data was uploaded on Zenodo, is publicly available or available via an NCBI project. All VCF files have been created from the linked sequencing data. For easier reproduction of the algorithmic results, we provide all processed VCF files via Zenodo (except those for the whole-chromosome results as they are too large).

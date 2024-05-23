@@ -1,0 +1,14 @@
+name: pedmec-pipeline
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bcftools
+  - rtg-tools
+  - packaging
+  - ca-certificates
+  - openssl
+  - snakemake
+  - biopython
+  - certifi
+prefix: /srv/homes/schrinner/mambaforge/envs/pedmec-pipeline

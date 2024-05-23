@@ -1,0 +1,12 @@
+name: genpipe2
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - gatk4=4.1.8
+  - sambamba
+  - tabix
+  - bcftools
+  - snakemake
+  - minimap2
+prefix: /srv/homes/schrinner/mambaforge/envs/genpipe2
