@@ -12,10 +12,10 @@ The HiFi data for the Altus cultivar is also provided on Zenodo. In the `polypha
 
 All phasing results can be created by running the provided snakemake pipeline. Since HPoP creates temporary files with hardcoded names, it cannot be run in parallel. (TODO: use shadow rules for this in the future)
 
-snakemake all --snakefile Snakemake-evaluation --cores 64 --resources hpop=1 --use-conda
+`snakemake all --snakefile Snakemake-evaluation --cores 64 --resources hpop=1 --use-conda`
 
 For the runtime benchmarks, there is a reduced set of configurations that should only be run with a small number of cores to minimize their competition for shared resources. We used two cores on a 64-core machine for this purpose:
 
-snakemake benchmark --snakefile Snakemake-evaluation --cores 2 --resources hpop=1 --use-conda
+`snakemake benchmark --snakefile Snakemake-evaluation --cores 2 --resources hpop=1 --use-conda`
 
 Please note that this pipeline requires conda to run properly because it contains two different versions of WhatsHap, for which separate environments are needed.

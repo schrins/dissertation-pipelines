@@ -3,12 +3,15 @@
 Here, we describe the performed steps to setup and execute the experiments for Chapter 2.
 
 Exported conda environments:
+
 `env-pedmec-genetic.yml` - Full package list of used environment
+
 `env-pedmec-genetic-history.yml` - Prompted package list of used environment
 
 ## Creating a ground truth phasing
 
 The ground truth phasing is based on a high-quality assembly, available on the following repo: https://github.com/marbl/HG002
+
 In particular, we used the v1.0.1 assembly from October 2023: https://s3-us-west-2.amazonaws.com/human-pangenomics/T2T/HG002/assemblies/hg002v1.0.1.fasta.gz
 
 Next step is to use the tool PAV, available on the following repo: https://github.com/EichlerLab/pav
@@ -59,13 +62,17 @@ The resulting file `pav_remerged.chr1.vcf` is finally used for the phasing exper
 The PacBio reads for the trio are available here:
 
 https://ftp-trace.ncbi.nlm.nih.gov/giab/ftp/data/AshkenazimTrio/HG002_NA24385_son/PacBio_MtSinai_NIST/PacBio_minimap2_bam/HG002_PacBio_GRCh38.bam
+
 https://ftp-trace.ncbi.nlm.nih.gov/giab/ftp/data/AshkenazimTrio/HG003_NA24149_father/PacBio_MtSinai_NIST/PacBio_minimap2_bam/HG003_PacBio_GRCh38.bam
+
 https://ftp-trace.ncbi.nlm.nih.gov/giab/ftp/data/AshkenazimTrio/HG004_NA24143_mother/PacBio_MtSinai_NIST/PacBio_minimap2_bam/HG004_PacBio_GRCh38.bam
 
 The HiFi reads for the trio are available here:
 
 https://ftp-trace.ncbi.nlm.nih.gov/giab/ftp/data/AshkenazimTrio/HG002_NA24385_son/PacBio_CCS_15kb_20kb_chemistry2/GRCh38/HG002.SequelII.merged_15kb_20kb.pbmm2.GRCh38.haplotag.10x.bam
+
 https://ftp-trace.ncbi.nlm.nih.gov/giab/ftp/data/AshkenazimTrio/HG003_NA24149_father/PacBio_CCS_15kb_20kb_chemistry2/GRCh38/HG003.SequelII.merged_15kb_20kb.pbmm2.GRCh38.haplotag.10x.bam
+
 https://ftp-trace.ncbi.nlm.nih.gov/giab/ftp/data/AshkenazimTrio/HG004_NA24143_mother/PacBio_CCS_15kb_20kb_chemistry2/GRCh38/HG004.SequelII.merged_15kb_20kb.pbmm2.GRCh38.haplotag.10x.bam
 
 ## Testing PedMEC heuristic

@@ -8,7 +8,9 @@ The repository is divided into three subfolders, each of which correspond to one
 
 ## Data
 
-Each subfolder uses different datasets from varying sources. The readme file in each subfolder should provide information on where to find the data. Some of the required files are uploaded on Zenodo under the DOI '10.5281/zenodo.11264527'. All reference to Zenodo in the other readme files refer to this Zenodo upload.
+Each subfolder uses different datasets from varying sources. The readme file in each subfolder should provide information on where to find the data. Some of the required files are uploaded on Zenodo under the following URL. All reference to Zenodo in the other readme files refer to this Zenodo upload.
+
+https://doi.org/10.5281/zenodo.11264527
 
 It does not contain all data, as the used sequencing data would be too large. However, it contains many intermediate files that I or my collaborators created while we worked on the different projects. These intermediate files are, in principle, reconstructible from publicly available data but I uploaded them separately for two reasons: (i) It simplifies the reproduction of algorithmic results because the data generation steps requires some effort and might yield different results in the future due to different tools or tool versions. (ii) The original data sources might become unavailable.
 
@@ -17,6 +19,8 @@ It does not contain all data, as the used sequencing data would be too large. Ho
 ### Conda
 
 All workflow pipelines were run in separate conda environments. The environments were created over time and are not consistent with one another regarding the exact version of tools and packages. I exported the conda environment by the time of submission into yml-files, once with **all** installed packages (without 'history'-suffix in file name, created by `conda env export`) and once with only the manually requested packages (with 'history'-suffix in file name, created by `conda env export --from-history`). Please note that the latter type of will likely different results in a different environment than what was used for the dissertation due to conda always choosing the most recent package versions by the creation time of the environment.
+
+Make sure to adjust the file paths in the corresponding config files.
 
 ### WhatsHap
 
